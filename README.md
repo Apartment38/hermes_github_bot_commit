@@ -2,7 +2,7 @@
     <img src="Engraved_Hermes_Commit_Seal.png"
 </p>
 
-# Hermes GitHub Bot Identity
+# Hermes GitHub Bot Commit Plugin
 
 A native Hermes plugin that applies a bot identity to commits in repositories
 whose effective `origin` fetch URL points to **github.com**. It runs in the
