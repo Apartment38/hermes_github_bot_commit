@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -65,6 +66,17 @@ class GitTests(unittest.TestCase):
 
     def assertReplay(self):
         self.assertEqual(self.identities(), ["Original Author", "original@example.test", "Test Bot", "bot@example.test"])
+
+    def test_launcher_retains_dependency_path_from_host(self):
+        # Model Hermes's managed Python: dependencies exist in the host's
+        # sys.path, but are not installed into the bare child interpreter.
+        interpreter = self.root / "bare-python"
+        interpreter.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -S "$@"\n')
+        interpreter.chmod(0o700)
+        with patch.object(github_bot.sys, "executable", str(interpreter)):
+            github_bot.wrapper_directory(self.home)
+        self.commit("bootstrapped dependency")
+        self.assertBot()
 
     def test_commit_amend_and_message_options(self):
         self.commit("--reset-author")
@@ -286,6 +298,21 @@ class GitTests(unittest.TestCase):
 
 
 class TransformTests(unittest.TestCase):
+    def test_shell_cleanup_preserves_path_for_plain_and_pattern_directories(self):
+        original = "/home/example/bin:/usr/local/bin:/usr/bin:/bin"
+        for path in (
+            "/home/example/.hermes/cache/hermes-github-bot/bin",
+            "/home/example/[profile]*/bin",
+        ):
+            with self.subTest(path=path):
+                command = github_bot.shell_command("true", Path(path))
+                result = subprocess.run(
+                    ["/bin/bash", "-c", command + '\nprintf "%s" "$PATH"'],
+                    env={"PATH": original}, capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, original)
+
     def test_shell_state_status_and_background(self):
         with tempfile.TemporaryDirectory(prefix="github bot '") as temporary:
             directory = Path(temporary) / "bin"

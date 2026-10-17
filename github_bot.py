@@ -15,10 +15,19 @@ def wrapper_directory(home: Path) -> Path:
     directory = home / "cache" / "hermes-github-bot" / "bin"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     helper = Path(__file__).with_name("git_wrapper.py").resolve()
+    # Hermes can bootstrap managed dependencies into sys.path without using a
+    # venv executable. Bare sys.executable children do not inherit that path.
+    import dotenv
+    dependency_root = str(Path(dotenv.__file__).resolve().parent.parent)
+    bootstrap = (
+        f"import sys; sys.path.insert(0, {dependency_root!r}); "
+        "import runpy; helper = sys.argv.pop(1); "
+        "runpy.run_path(helper, run_name='__main__')"
+    )
     content = (
         "#!/bin/sh\nexec "
         + " ".join(shlex.quote(x) for x in (
-            sys.executable, str(helper), "--env-file", str(home / ".env"), "--"
+            sys.executable, "-c", bootstrap, str(helper), "--env-file", str(home / ".env"), "--"
         ))
         + ' "$@"\n'
     )
@@ -42,6 +51,7 @@ def shell_command(command: str, directory: Path) -> str:
     persist our temporary PATH. Background children inherit the active wrapper.
     """
     status = "_github_bot_status_" + uuid.uuid4().hex
+    path = "_github_bot_path_" + uuid.uuid4().hex
     quoted = shlex.quote(str(directory))
     # Evaluate separately so a user syntax error returns to our cleanup rather
     # than leaving the wrapper PATH in Hermes's persistent shell snapshot.
@@ -49,8 +59,9 @@ def shell_command(command: str, directory: Path) -> str:
         f"export PATH={quoted}:\"$PATH\"\n"
         + "eval " + shlex.quote(command)
         + f"\n{status}=$?\n"
-        + f'PATH=${{PATH//{quoted}:/}}\nPATH=${{PATH%:{quoted}}}\nexport PATH\n'
-        + f'eval "unset {status}; (exit ${{{status}}})"\n'
+        + f'{path}={quoted}\n'
+        + f'PATH=${{PATH//"${path}":/}}\nPATH=${{PATH%:"${path}"}}\nexport PATH\n'
+        + f'eval "unset {status} {path}; (exit ${{{status}}})"\n'
     )
 
 
