@@ -117,15 +117,28 @@ def cli(args):
 
     if args.action == "setup":
         from hermes_cli.config import save_env_value
-        name = input("GitHub bot author name: ").strip()
-        email = input("GitHub bot author email: ").strip()
+        import subprocess
+
+        slug = input("GitHub App slug: ").strip()
         try:
-            validate_identity(name, email)
-        except IdentityError as exc:
-            print(str(exc), file=sys.stderr)
+            validate_identity(slug, "1")
+            response = subprocess.run(
+                ["curl", "-fsSL", "--max-time", "30",
+                 f"https://api.github.com/users/{slug}%5Bbot%5D"],
+                check=True, capture_output=True, text=True, timeout=35,
+            )
+            # Parse .id directly, without requiring a separate jq installation.
+            payload = json.loads(response.stdout)
+            bot_id = payload.get("id") if isinstance(payload, dict) else None
+            if type(bot_id) is not int or bot_id <= 0:
+                raise IdentityError("github-bot: GitHub returned no valid bot ID")
+            bot_id = str(bot_id)
+            validate_identity(slug, bot_id)
+        except (IdentityError, OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"github-bot: setup failed: {exc}", file=sys.stderr)
             return 1
-        save_env_value("GITHUB_AUTHOR_NAME", name)
-        save_env_value("GITHUB_AUTHOR_EMAIL", email)
+        save_env_value("GITHUB_APP_SLUG", slug)
+        save_env_value("GITHUB_BOT_ID", bot_id)
     try:
         name, email = load_identity(get_env_path())
     except IdentityError as exc:

@@ -42,8 +42,15 @@ class HermesTests(unittest.TestCase):
             (home / ".env").write_text("UNRELATED=keep-this\n")
             token = set_hermes_home_override(home)
             self.addCleanup(reset_hermes_home_override, token)
-            with patch("builtins.input", side_effect=["CLI Bot", "cli@example.test"]):
-                self.assertEqual(self.plugin.github_bot.cli(argparse.Namespace(action="setup")), 0)
+            with patch("builtins.input", side_effect=["cli-app"]):
+                with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, '{"id": 123456}')) as lookup:
+                    self.assertEqual(self.plugin.github_bot.cli(argparse.Namespace(action="setup")), 0)
+                lookup.assert_called_once()
+                self.assertEqual(lookup.call_args.args[0][-1], "https://api.github.com/users/cli-app%5Bbot%5D")
+                from dotenv import dotenv_values
+                values = dotenv_values(home / ".env")
+                self.assertEqual(values["GITHUB_APP_SLUG"], "cli-app")
+                self.assertEqual(values["GITHUB_BOT_ID"], "123456")
                 self.assertIn("UNRELATED=keep-this", (home / ".env").read_text())
                 (home / "config.yaml").write_text("terminal:\n  backend: local\n")
                 transformed = self.plugin.github_bot.middleware(tool_name="terminal", args={"command": "git --version", "timeout": 42})

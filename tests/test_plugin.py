@@ -27,7 +27,7 @@ class GitTests(unittest.TestCase):
         self.home = self.root / "hermes profile"
         self.home.mkdir()
         self.env_file = self.home / ".env"
-        self.env_file.write_text('GITHUB_AUTHOR_NAME="Test Bot"\nGITHUB_AUTHOR_EMAIL=bot@example.test\n')
+        self.env_file.write_text('GITHUB_APP_SLUG=test-app\nGITHUB_BOT_ID=123456\n')
         self.bin = github_bot.wrapper_directory(self.home)
         self.real_git = shutil.which("git")
         self.env = {
@@ -62,10 +62,10 @@ class GitTests(unittest.TestCase):
         return self.git("show", "-s", "--format=%an|%ae|%cn|%ce", ref).stdout.strip().split("|")
 
     def assertBot(self, ref="HEAD"):
-        self.assertEqual(self.identities(ref), ["Test Bot", "bot@example.test"] * 2)
+        self.assertEqual(self.identities(ref), ["test-app[bot]", "123456+test-app[bot]@users.noreply.github.com"] * 2)
 
     def assertReplay(self):
-        self.assertEqual(self.identities(), ["Original Author", "original@example.test", "Test Bot", "bot@example.test"])
+        self.assertEqual(self.identities(), ["Original Author", "original@example.test", "test-app[bot]", "123456+test-app[bot]@users.noreply.github.com"])
 
     def test_launcher_retains_dependency_path_from_host(self):
         # Model Hermes's managed Python: dependencies exist in the host's
@@ -110,7 +110,7 @@ class GitTests(unittest.TestCase):
         worktree = self.root / "work tree"
         self.git("worktree", "add", "-b", "work", str(worktree))
         self.git("commit", "--allow-empty", "-m", "worktree", cwd=worktree)
-        self.assertEqual(self.git("show", "-s", "--format=%cn", "work").stdout.strip(), "Test Bot")
+        self.assertEqual(self.git("show", "-s", "--format=%cn", "work").stdout.strip(), "test-app[bot]")
         self.git("--git-dir", str(self.repo / ".git"), "--work-tree", str(self.repo), "commit", "--allow-empty", "-m", "explicit", cwd=self.root)
         self.assertBot()
 
@@ -246,21 +246,20 @@ class GitTests(unittest.TestCase):
         self.assertBot()
         second = self.root / "second-profile"
         second.mkdir()
-        (second / ".env").write_text('GITHUB_AUTHOR_NAME="Second Bot"\nGITHUB_AUTHOR_EMAIL=second@example.test\n')
+        (second / ".env").write_text('GITHUB_APP_SLUG=second-app\nGITHUB_BOT_ID=654321\n')
         second_bin = github_bot.wrapper_directory(second)
         env = {**self.env, "PATH": str(second_bin) + os.pathsep + os.environ["PATH"]}
         subprocess.run([str(second_bin / "git"), "commit", "--allow-empty", "-m", "second"], cwd=self.repo, env=env, check=True, capture_output=True)
-        self.assertEqual(self.identities(), ["Second Bot", "second@example.test"] * 2)
+        self.assertEqual(self.identities(), ["second-app[bot]", "654321+second-app[bot]@users.noreply.github.com"] * 2)
 
     def test_literal_dotenv_and_identity_validation(self):
         marker = self.root / "should-not-exist"
-        self.env_file.write_text(f"GITHUB_AUTHOR_NAME='Bot $(touch {marker}) ${{USER}}'\nGITHUB_AUTHOR_EMAIL=bot@example.test\n")
-        self.commit()
-        self.assertIn("${USER}", self.identities()[0])
+        self.env_file.write_text(f"GITHUB_APP_SLUG='$(touch {marker}) ${{USER}}'\nGITHUB_BOT_ID=123456\n")
+        self.assertNotEqual(self.git("commit", "--allow-empty", "-m", "invalid", check=False).returncode, 0)
         self.assertFalse(marker.exists())
-        for name, email in [("", "b@e"), ("Bad <name>", "b@e"), ("Bot", "bad email"), ("Bot\nName", "b@e")]:
+        for slug, bot_id in [("", "1"), ("bad/slug", "1"), ("app", "null"), ("app", "0"), ("app", "1\n"), ("app[bot]", "1")]:
             with self.assertRaises(git_wrapper.IdentityError):
-                git_wrapper.validate_identity(name, email)
+                git_wrapper.validate_identity(slug, bot_id)
 
     def test_push_passthrough_environment_and_credentials(self):
         fake = self.root / "fake-bin"

@@ -6,12 +6,12 @@ harness, with no added prompts, skills, or model-facing tools.
 
 It changes commit metadata, not GitHub authentication. Pushes continue to use
 the credentials and configuration Hermes normally supplies to Git. The bot
-account must already exist; use an email associated with that account (including
-its GitHub-provided noreply address) for GitHub attribution.
+account must already exist; setup derives its GitHub noreply address automatically.
 
 ## Requirements
 
 - Linux or macOS, Hermes's **local** terminal backend, and Git 2.31 or later.
+- `curl` and access to api.github.com during setup (no `jq` required).
 - A current Hermes release supporting native `tool_request` middleware,
   `register_cli_command`, and profile-aware configuration helpers. The implementation
   was checked against Hermes checkout `d923a5eb487` (October 17, 2026).
@@ -60,9 +60,10 @@ After installation completes, configure the bot identity (once per profile):
 hermes github-bot setup
 ```
 
-`setup` writes the bot name and email into the active profile's `.env` file (see
-below). You may also edit these two entries yourself; they are read afresh for
-each qualifying Git invocation.
+`setup` asks only for the GitHub App slug (without `[bot]`), fetches the bot ID
+from `https://api.github.com/users/${APP_SLUG}%5Bbot%5D` using `curl -fsSL`,
+and parses `.id` in Python. Both values are saved in the active profile's `.env`
+file and read afresh for each qualifying Git invocation.
 
 ### Install from a source checkout
 
@@ -101,17 +102,21 @@ hermes plugins install <owner>/hermes-github-bot --ref 0123456789abcdef012345678
 `hermes plugins install <owner>/hermes-github-bot --force --ref <new-sha>`
 to update it deliberately.
 
-`setup` validates both values before saving them using Hermes's `.env` writer:
+`setup` validates the slug and API-returned ID before saving either value using
+Hermes's `.env` writer. Lookup errors leave the saved identity unchanged:
 
 ```dotenv
-GITHUB_AUTHOR_NAME="Example Bot"
-GITHUB_AUTHOR_EMAIL="123456+example-bot@users.noreply.github.com"
+GITHUB_APP_SLUG="example-app"
+GITHUB_BOT_ID="123456"
 ```
 
 You may also edit these two entries yourself. They are read afresh for each
 qualifying Git invocation; other `.env` values are never forwarded by this
 plugin. Shell substitution and `${VARIABLE}` interpolation are disabled when
 reading identity values. Bot credentials or tokens are unnecessary.
+Existing installations using `GITHUB_AUTHOR_NAME` / `GITHUB_AUTHOR_EMAIL` must
+rerun `hermes github-bot setup`; those legacy entries are no longer used.
+Commits do not make network requests.
 
 ## Behavior
 
@@ -142,9 +147,13 @@ For ordinary `git commit`, the wrapper executes the argument/environment
 equivalent of:
 
 ```bash
-GIT_COMMITTER_NAME="$GITHUB_AUTHOR_NAME" \
-GIT_COMMITTER_EMAIL="$GITHUB_AUTHOR_EMAIL" \
-git commit --author="$GITHUB_AUTHOR_NAME <$GITHUB_AUTHOR_EMAIL>" -m "$MESSAGE"
+APP_SLUG="$GITHUB_APP_SLUG"
+BOT_ID="$GITHUB_BOT_ID"
+GIT_COMMITTER_NAME="${APP_SLUG}[bot]" \
+GIT_COMMITTER_EMAIL="${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com" \
+git commit \
+  --author="${APP_SLUG}[bot] <${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com>" \
+  -m "$MESSAGE"
 ```
 
 Arguments are passed directly to Git; commit messages are never reconstructed

@@ -37,12 +37,15 @@ class IdentityError(ValueError):
     """Configuration cannot safely represent a Git identity."""
 
 
-def validate_identity(name: str | None, email: str | None) -> tuple[str, str]:
-    for key, value in (("GITHUB_AUTHOR_NAME", name), ("GITHUB_AUTHOR_EMAIL", email)):
-        if (not value or not value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value)
-                or "<" in value or ">" in value or (key.endswith("EMAIL") and any(c.isspace() for c in value))):
+def validate_identity(slug: str | None, bot_id: str | None) -> tuple[str, str]:
+    for key, value, pattern in (
+        ("GITHUB_APP_SLUG", slug, r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"),
+        ("GITHUB_BOT_ID", bot_id, r"[1-9][0-9]*"),
+    ):
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
             raise IdentityError(f"github-bot: set a valid {key} in the active Hermes .env; run hermes github-bot setup")
-    return name, email
+    name = f"{slug}[bot]"
+    return name, f"{bot_id}+{name}@users.noreply.github.com"
 
 
 def load_identity(path: Path) -> tuple[str, str]:
@@ -52,7 +55,7 @@ def load_identity(path: Path) -> tuple[str, str]:
         values = dotenv_values(path, interpolate=False)
     except (OSError, UnicodeError) as exc:
         raise IdentityError("github-bot: cannot read the active Hermes .env") from exc
-    return validate_identity(values.get("GITHUB_AUTHOR_NAME"), values.get("GITHUB_AUTHOR_EMAIL"))
+    return validate_identity(values.get("GITHUB_APP_SLUG"), values.get("GITHUB_BOT_ID"))
 
 
 def github_url(value: str) -> bool:
