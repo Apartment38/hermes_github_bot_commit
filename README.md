@@ -32,11 +32,18 @@ directly from GitHub through Hermes's plugin manager.
 Open a terminal, activate the **same profile** you use for Hermes, and run:
 
 ```bash
-hermes plugins install <owner>/hermes-github-bot-commit
+hermes plugin install Apartment38/hermes_github_bot_commit
 ```
 
-Hermes clones the repository into the active profile's plugin directory
-(`$HERMES_HOME/plugins/hermes-github-bot-commit`) and then asks:
+If your Hermes release reports that `plugin` is not a command, use the plural
+form instead:
+
+```bash
+hermes plugins install Apartment38/hermes_github_bot_commit
+```
+
+Use `plugins` in place of `plugin` in the install examples below on those releases.
+Hermes clones the repository into the active profile's plugin directory and then asks:
 
 ```
 Enable 'hermes-github-bot-commit' now? [y/N]
@@ -47,9 +54,9 @@ install, use `--enable` to enable it immediately, or `--no-enable` to skip the
 prompt entirely:
 
 ```bash
-hermes plugins install <owner>/hermes-github-bot-commit --enable
+hermes plugin install Apartment38/hermes_github_bot_commit --enable
 # or
-hermes plugins install <owner>/hermes-github-bot-commit --no-enable
+hermes plugin install Apartment38/hermes_github_bot_commit --no-enable
 ```
 
 If you installed without enabling it, enable the plugin afterwards:
@@ -58,12 +65,61 @@ If you installed without enabling it, enable the plugin afterwards:
 hermes plugins enable hermes-github-bot-commit
 ```
 
-After installation completes, configure the bot identity (once per profile):
+### Create a GitHub App and find its slug
+
+If you already have a GitHub App, skip to step 4 to find its slug. Otherwise,
+register an app to give your Hermes commits a distinct bot identity. Use a
+separate app for each agent if you want their commits to be distinguishable.
+
+1. **Choose the owner and open the registration form.**
+   - **Personal account:** Go to your GitHub profile picture → **Settings** →
+     **Developer settings** → **GitHub Apps** → **New GitHub App**, or open
+     [the personal registration form](https://github.com/settings/apps/new).
+   - **Organization:** Go to your profile picture → **Your organizations** →
+     the organization's **Settings** → **Developer settings** → **GitHub Apps** →
+     **New GitHub App**. The direct URL is
+     `https://github.com/organizations/ORG/settings/apps/new` (replace `ORG`).
+     You need organization ownership or the appropriate app-management permission.
+
+2. **Complete the registration form.**
+
+   | GitHub setting | Value for this plugin |
+   | --- | --- |
+   | **GitHub App name** | A unique name, such as `my-hermes-agent` (up to 34 characters). |
+   | **Description** | Optional; describe the agent or purpose. |
+   | **Homepage URL** | Your GitHub account or organization URL; no dedicated website is needed. |
+   | **Callback URL** | Leave blank. |
+   | **Request user authorization (OAuth) during installation** | Off. |
+   | **Enable Device Flow** | Off. |
+   | **Setup URL** | Leave blank. |
+   | **Webhooks → Active** | Off; this plugin does not receive events. |
+   | **Repository, organization, and account permissions** | Leave at their defaults: **No access**, apart from automatically granted **Metadata: Read-only**. This plugin does not need repository write permissions. |
+   | **Where can this GitHub App be installed?** | **Only on this account** is sufficient for this plugin. Choose **Any account** only if you separately intend to install the app on other accounts. |
+
+3. Click **Create GitHub App**.
+
+4. **Copy the App Slug.** Open the app's public page from its settings. The
+   slug is the final part of its public URL: for
+   `https://github.com/apps/my-hermes-agent`, enter `my-hermes-agent`.
+   Use the URL slug, not the display name, numeric App ID, Client ID, or
+   installation ID, and do **not** append `[bot]`.
+
+That is all the GitHub App information this plugin needs. You do **not** need to
+install the app on repositories, generate a private key, or obtain an access
+token for this plugin. It changes commit attribution only; pushes still use
+Hermes's existing Git credentials. App installation and authentication are
+separate concerns if you later want other tools to act as the app.
+
+### Configure the bot identity
+
+After installation and app registration, configure the identity once per profile:
 
 ```bash
 hermes github-bot-commit setup
+hermes github-bot-commit status
 ```
 
+When prompted for `GitHub App slug:`, paste the slug from step 4.
 `setup` asks only for the GitHub App slug (without `[bot]`), fetches the bot ID
 from `https://api.github.com/users/${APP_SLUG}%5Bbot%5D` using `curl -fsSL`,
 and parses `.id` in Python. Both values are saved in the active profile's `.env`
@@ -99,11 +155,11 @@ verifies that `HEAD` exactly matches the requested SHA, and records the pin in
 the current profile:
 
 ```bash
-hermes plugins install <owner>/hermes-github-bot-commit --ref 0123456789abcdef0123456789abcdef01234567
+hermes plugin install Apartment38/hermes_github_bot_commit --ref 0123456789abcdef0123456789abcdef01234567
 ```
 
 `hermes plugins update` refuses to move a pinned plugin; use
-`hermes plugins install <owner>/hermes-github-bot-commit --force --ref <new-sha>`
+`hermes plugin install Apartment38/hermes_github_bot_commit --force --ref <new-sha>`
 to update it deliberately.
 
 `setup` validates the slug and API-returned ID before saving either value using
