@@ -300,7 +300,7 @@ class TransformTests(unittest.TestCase):
     def test_shell_cleanup_preserves_path_for_plain_and_pattern_directories(self):
         original = "/home/example/bin:/usr/local/bin:/usr/bin:/bin"
         for path in (
-            "/home/example/.hermes/cache/hermes-github-bot/bin",
+            "/home/example/.hermes/cache/hermes-github-bot-commit/bin",
             "/home/example/[profile]*/bin",
         ):
             with self.subTest(path=path):

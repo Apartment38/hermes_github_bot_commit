@@ -1,4 +1,4 @@
-name: hermes-github-bot
+name: hermes-github-bot-commit
 version: 0.1.0
 description: Apply a bot commit identity to GitHub repositories in Hermes local tools.
 author: Hermes GitHub Bot contributors

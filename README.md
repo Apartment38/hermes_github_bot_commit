@@ -28,14 +28,14 @@ directly from GitHub through Hermes's plugin manager.
 Open a terminal, activate the **same profile** you use for Hermes, and run:
 
 ```bash
-hermes plugins install <owner>/hermes-github-bot
+hermes plugins install <owner>/hermes-github-bot-commit
 ```
 
 Hermes clones the repository into the active profile's plugin directory
-(`$HERMES_HOME/plugins/hermes-github-bot`) and then asks:
+(`$HERMES_HOME/plugins/hermes-github-bot-commit`) and then asks:
 
 ```
-Enable 'hermes-github-bot' now? [y/N]
+Enable 'hermes-github-bot-commit' now? [y/N]
 ```
 
 Replying `y` (or `yes`) enables the plugin for your session. For a non-interactive
@@ -43,21 +43,21 @@ install, use `--enable` to enable it immediately, or `--no-enable` to skip the
 prompt entirely:
 
 ```bash
-hermes plugins install <owner>/hermes-github-bot --enable
+hermes plugins install <owner>/hermes-github-bot-commit --enable
 # or
-hermes plugins install <owner>/hermes-github-bot --no-enable
+hermes plugins install <owner>/hermes-github-bot-commit --no-enable
 ```
 
 If you installed without enabling it, enable the plugin afterwards:
 
 ```bash
-hermes plugins enable hermes-github-bot
+hermes plugins enable hermes-github-bot-commit
 ```
 
 After installation completes, configure the bot identity (once per profile):
 
 ```bash
-hermes github-bot setup
+hermes github-bot-commit setup
 ```
 
 `setup` asks only for the GitHub App slug (without `[bot]`), fetches the bot ID
@@ -68,21 +68,21 @@ file and read afresh for each qualifying Git invocation.
 ### Install from a source checkout
 
 Copy this directory into the **active Hermes profile's** plugin directory, for
-example `$HERMES_HOME/plugins/hermes-github-bot` (default
-`~/.hermes/plugins/hermes-github-bot`):
+example `$HERMES_HOME/plugins/hermes-github-bot-commit` (default
+`~/.hermes/plugins/hermes-github-bot-commit`):
 
 ```bash
-mkdir -p "${HERMES_HOME:-$HOME/.hermes}/plugins/hermes-github-bot"
+mkdir -p "${HERMES_HOME:-$HOME/.hermes}/plugins/hermes-github-bot-commit"
 cp __init__.py github_bot.py git_wrapper.py plugin.yaml README.md \
-  "${HERMES_HOME:-$HOME/.hermes}/plugins/hermes-github-bot/"
+  "${HERMES_HOME:-$HOME/.hermes}/plugins/hermes-github-bot-commit/"
 ```
 
 Then enable the plugin and run the setup wizard:
 
 ```bash
-hermes plugins enable hermes-github-bot
-hermes github-bot setup
-hermes github-bot status
+hermes plugins enable hermes-github-bot-commit
+hermes github-bot-commit setup
+hermes github-bot-commit status
 ```
 
 Use the same profile for installation, setup, and your Hermes session.
@@ -95,11 +95,11 @@ verifies that `HEAD` exactly matches the requested SHA, and records the pin in
 the current profile:
 
 ```bash
-hermes plugins install <owner>/hermes-github-bot --ref 0123456789abcdef0123456789abcdef01234567
+hermes plugins install <owner>/hermes-github-bot-commit --ref 0123456789abcdef0123456789abcdef01234567
 ```
 
 `hermes plugins update` refuses to move a pinned plugin; use
-`hermes plugins install <owner>/hermes-github-bot --force --ref <new-sha>`
+`hermes plugins install <owner>/hermes-github-bot-commit --force --ref <new-sha>`
 to update it deliberately.
 
 `setup` validates the slug and API-returned ID before saving either value using
@@ -115,7 +115,7 @@ qualifying Git invocation; other `.env` values are never forwarded by this
 plugin. Shell substitution and `${VARIABLE}` interpolation are disabled when
 reading identity values. Bot credentials or tokens are unnecessary.
 Existing installations using `GITHUB_AUTHOR_NAME` / `GITHUB_AUTHOR_EMAIL` must
-rerun `hermes github-bot setup`; those legacy entries are no longer used.
+rerun `hermes github-bot-commit setup`; those legacy entries are no longer used.
 Commits do not make network requests.
 
 ## Behavior
@@ -162,12 +162,13 @@ configuration, `HOME`, SSH configuration, credential helpers, and tokens remain
 under the user's control. The plugin writes no repository or global Git config.
 
 The temporary launcher lives in the active profile's
-`cache/hermes-github-bot/bin/`. It contains only interpreter, plugin, dependency,
-and `.env` paths. The launcher carries the host's resolved `python-dotenv`
-location into its child Python process, including when Hermes bootstraps a
-managed environment rather than running a venv executable. No global Python
-installation or `PYTHONPATH` change is needed. Restart Hermes after updating
-plugin code so its in-memory middleware uses the new implementation.
+`cache/hermes-github-bot-commit/bin/`. It contains only interpreter, plugin,
+dependency, and `.env` paths. The launcher carries the host's resolved
+`python-dotenv` location into its child Python process, including when Hermes
+bootstraps a managed environment rather than running a venv executable. No global
+Python installation or `PYTHONPATH` change is needed. Restart Hermes after
+updating plugin code so its in-memory middleware uses the new implementation.
+
 Foreground tool execution removes the wrapper path afterward while
 preserving cwd, exported variables, and command exit status. Background children
 retain their launch environment and finish with the policy they started with.

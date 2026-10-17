@@ -43,7 +43,7 @@ def validate_identity(slug: str | None, bot_id: str | None) -> tuple[str, str]:
         ("GITHUB_BOT_ID", bot_id, r"[1-9][0-9]*"),
     ):
         if not isinstance(value, str) or not re.fullmatch(pattern, value):
-            raise IdentityError(f"github-bot: set a valid {key} in the active Hermes .env; run hermes github-bot setup")
+            raise IdentityError(f"github-bot-commit: set a valid {key} in the active Hermes .env; run hermes github-bot-commit setup")
     name = f"{slug}[bot]"
     return name, f"{bot_id}+{name}@users.noreply.github.com"
 
@@ -54,7 +54,7 @@ def load_identity(path: Path) -> tuple[str, str]:
         # of the Git subprocess, including authentication/provider credentials.
         values = dotenv_values(path, interpolate=False)
     except (OSError, UnicodeError) as exc:
-        raise IdentityError("github-bot: cannot read the active Hermes .env") from exc
+        raise IdentityError("github-bot-commit: cannot read the active Hermes .env") from exc
     return validate_identity(values.get("GITHUB_APP_SLUG"), values.get("GITHUB_BOT_ID"))
 
 
@@ -110,7 +110,7 @@ def resolve_alias(git: str, argv: list[str], wrapper_dir: Path) -> list[str]:
             body = f'!export PATH={shlex.quote(str(wrapper_dir))}:"$PATH"; ' + alias[1:]
             return [*options, "-c", f"alias.{command}={body}", command, *rest]
         argv = [*options, *shlex.split(alias), *rest]
-    raise IdentityError("github-bot: Git alias nesting exceeds 20 levels")
+    raise IdentityError("github-bot-commit: Git alias nesting exceeds 20 levels")
 
 
 def creates_commits(command: str, args: list[str]) -> bool:
@@ -184,16 +184,16 @@ def invocation(git: str, argv: list[str], env_file: Path, wrapper_dir: Path) -> 
 
 def main():
     if len(sys.argv) < 4 or sys.argv[1] != "--env-file" or sys.argv[3] != "--":
-        print("github-bot: invalid wrapper invocation", file=sys.stderr)
+        print("github-bot-commit: invalid wrapper invocation", file=sys.stderr)
         return 128
     env_file = Path(sys.argv[2])
-    wrapper_dir = env_file.parent / "cache" / "hermes-github-bot" / "bin"
+    wrapper_dir = env_file.parent / "cache" / "hermes-github-bot-commit" / "bin"
     search_path = os.pathsep.join(
         p for p in os.get_exec_path() if Path(p or ".").resolve() != wrapper_dir.resolve()
     )
     git = shutil.which("git", path=search_path)
     if not git:
-        print("github-bot: cannot find the original git executable", file=sys.stderr)
+        print("github-bot-commit: cannot find the original git executable", file=sys.stderr)
         return 127
     try:
         argv, env = invocation(git, sys.argv[4:], env_file, wrapper_dir)

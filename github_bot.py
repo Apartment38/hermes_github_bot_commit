@@ -12,7 +12,7 @@ import uuid
 
 def wrapper_directory(home: Path) -> Path:
     """Publish a profile-specific launcher, without embedding any identity values."""
-    directory = home / "cache" / "hermes-github-bot" / "bin"
+    directory = home / "cache" / "hermes-github-bot-commit" / "bin"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     helper = Path(__file__).with_name("git_wrapper.py").resolve()
     # Hermes can bootstrap managed dependencies into sys.path without using a
@@ -29,7 +29,8 @@ def wrapper_directory(home: Path) -> Path:
         + " ".join(shlex.quote(x) for x in (
             sys.executable, "-c", bootstrap, str(helper), "--env-file", str(home / ".env"), "--"
         ))
-        + ' "$@"\n'
+        + ' "$@"'
+        + "\n"
     )
     target = directory / "git"
     if not target.exists() or target.read_text() != content:
@@ -60,7 +61,7 @@ def shell_command(command: str, directory: Path) -> str:
         + "eval " + shlex.quote(command)
         + f"\n{status}=$?\n"
         + f'{path}={quoted}\n'
-        + f'PATH=${{PATH//"${path}":/}}\nPATH=${{PATH%:"${path}"}}\nexport PATH\n'
+        + f'PATH=${{PATH//"${path}":/}}\nPATH=${{PATH%:/"${path}"}}\nexport PATH\n'
         + f'eval "unset {status} {path}; (exit ${{{status}}})"\n'
     )
 
@@ -76,7 +77,7 @@ def python_code(code: str, directory: Path) -> str:
     return (
         f"import os as {name}\n"
         + f"{name}.environ['PATH'] = {path!r} + ':' + {name}.environ.get('PATH', '')\n"
-        + f"try:\n    exec(compile({code!r}, '<github-bot execute_code>', 'exec', dont_inherit=True), globals())"
+        + f"try:\n    exec(compile({code!r}, '<github-bot-commit execute_code>', 'exec', dont_inherit=True), globals())"
         + "\nfinally:\n"
         + f"    {name}.environ['PATH'] = ':'.join(p for p in {name}.environ.get('PATH', '').split(':') if p != {path!r})\n"
         + f"    del {name}\n"
@@ -102,7 +103,7 @@ def middleware(tool_name=None, args=None, **kwargs):
     transform = shell_command if key == "command" else python_code
     return {
         "args": {**args, key: transform(args[key], directory)},
-        "source": "hermes-github-bot",
+        "source": "hermes-github-bot-commit",
         "reason": "Apply GitHub commit identity in the local harness",
     }
 
@@ -131,11 +132,11 @@ def cli(args):
             payload = json.loads(response.stdout)
             bot_id = payload.get("id") if isinstance(payload, dict) else None
             if type(bot_id) is not int or bot_id <= 0:
-                raise IdentityError("github-bot: GitHub returned no valid bot ID")
+                raise IdentityError("github-bot-commit: GitHub returned no valid bot ID")
             bot_id = str(bot_id)
             validate_identity(slug, bot_id)
         except (IdentityError, OSError, ValueError, subprocess.SubprocessError) as exc:
-            print(f"github-bot: setup failed: {exc}", file=sys.stderr)
+            print(f"github-bot-commit: setup failed: {exc}", file=sys.stderr)
             return 1
         save_env_value("GITHUB_APP_SLUG", slug)
         save_env_value("GITHUB_BOT_ID", bot_id)
