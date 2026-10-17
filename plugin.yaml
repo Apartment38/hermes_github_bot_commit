@@ -1,0 +1,12 @@
+name: hermes-github-bot
+version: 0.1.0
+description: Apply a bot commit identity to GitHub repositories in Hermes local tools.
+author: Hermes GitHub Bot contributors
+license: MIT
+provides_tools: []
+provides_hooks: []
+provides_middleware:
+  - tool_request
+python_dependencies:
+  - "python-dotenv>=1.0,<2"
+tags: [git, github, identity]
