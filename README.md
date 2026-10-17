@@ -1,3 +1,7 @@
+<p align="center">
+    <img src="Engraved_Hermes_Commit_Seal.png"
+</p>
+
 # Hermes GitHub Bot Identity
 
 A native Hermes plugin that applies a bot identity to commits in repositories
