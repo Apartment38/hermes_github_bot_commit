@@ -20,24 +20,86 @@ its GitHub-provided noreply address) for GitHub attribution.
 
 ## Install and configure
 
-Copy this directory into the **active Hermes profile's** plugin directory,
-for example `$HERMES_HOME/plugins/hermes-github-bot` (default
-`~/.hermes/plugins/hermes-github-bot`). For a source checkout:
+There are two ways to install this plugin: from a local source checkout, or
+directly from GitHub through Hermes's plugin manager.
+
+### Install from GitHub (recommended)
+
+Open a terminal, activate the **same profile** you use for Hermes, and run:
+
+```bash
+hermes plugins install <owner>/hermes-github-bot
+```
+
+Hermes clones the repository into the active profile's plugin directory
+(`$HERMES_HOME/plugins/hermes-github-bot`) and then asks:
+
+```
+Enable 'hermes-github-bot' now? [y/N]
+```
+
+Replying `y` (or `yes`) enables the plugin for your session. For a non-interactive
+install, use `--enable` to enable it immediately, or `--no-enable` to skip the
+prompt entirely:
+
+```bash
+hermes plugins install <owner>/hermes-github-bot --enable
+# or
+hermes plugins install <owner>/hermes-github-bot --no-enable
+```
+
+If you installed without enabling it, enable the plugin afterwards:
+
+```bash
+hermes plugins enable hermes-github-bot
+```
+
+After installation completes, configure the bot identity (once per profile):
+
+```bash
+hermes github-bot setup
+```
+
+`setup` writes the bot name and email into the active profile's `.env` file (see
+below). You may also edit these two entries yourself; they are read afresh for
+each qualifying Git invocation.
+
+### Install from a source checkout
+
+Copy this directory into the **active Hermes profile's** plugin directory, for
+example `$HERMES_HOME/plugins/hermes-github-bot` (default
+`~/.hermes/plugins/hermes-github-bot`):
 
 ```bash
 mkdir -p "${HERMES_HOME:-$HOME/.hermes}/plugins/hermes-github-bot"
 cp __init__.py github_bot.py git_wrapper.py plugin.yaml README.md \
   "${HERMES_HOME:-$HOME/.hermes}/plugins/hermes-github-bot/"
+```
+
+Then enable the plugin and run the setup wizard:
+
+```bash
 hermes plugins enable hermes-github-bot
 hermes github-bot setup
 hermes github-bot status
 ```
 
-Use the same profile for installation, setup, and your Hermes session. Once this
-repository is published, it can also be installed with Hermes's normal
-`hermes plugins install owner/repository` workflow. Follow any dependency
-preparation instructions Hermes displays; do not install into its managed
-runtime with raw pip.
+Use the same profile for installation, setup, and your Hermes session.
+
+### Pin to a specific revision
+
+When installing from GitHub, you can pin the plugin to an exact, immutable
+commit SHA instead of a branch or tag. Hermes checks out the commit detached,
+verifies that `HEAD` exactly matches the requested SHA, and records the pin in
+the current profile:
+
+```bash
+hermes plugins install <owner>/hermes-github-bot --ref 0123456789abcdef0123456789abcdef01234567
+```
+
+`hermes plugins update` refuses to move a pinned plugin; use
+`hermes plugins install <owner>/hermes-github-bot --force --ref <new-sha>`
+to update it deliberately.
 
 `setup` validates both values before saving them using Hermes's `.env` writer:
 
@@ -91,8 +153,13 @@ configuration, `HOME`, SSH configuration, credential helpers, and tokens remain
 under the user's control. The plugin writes no repository or global Git config.
 
 The temporary launcher lives in the active profile's
-`cache/hermes-github-bot/bin/`. It contains only interpreter, plugin, and `.env`
-paths. Foreground tool execution removes the wrapper path afterward while
+`cache/hermes-github-bot/bin/`. It contains only interpreter, plugin, dependency,
+and `.env` paths. The launcher carries the host's resolved `python-dotenv`
+location into its child Python process, including when Hermes bootstraps a
+managed environment rather than running a venv executable. No global Python
+installation or `PYTHONPATH` change is needed. Restart Hermes after updating
+plugin code so its in-memory middleware uses the new implementation.
+Foreground tool execution removes the wrapper path afterward while
 preserving cwd, exported variables, and command exit status. Background children
 retain their launch environment and finish with the policy they started with.
 Disabling the plugin affects subsequent calls, not existing background jobs.
