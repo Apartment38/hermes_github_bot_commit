@@ -12,6 +12,23 @@ It changes commit metadata, not GitHub authentication. Pushes continue to use
 the credentials and configuration Hermes normally supplies to Git. The bot
 account must already exist; setup derives its GitHub noreply address automatically.
 
+## Workflow
+
+Once the plugin is installed & configured, hermes should automatically use the App Identity in GitHub repos for actions other than commits.
+If you don't have automatic commits enabled (out of scope of this plugin), ask hermes to commit changes once it's done editing files.
+You will still need to manage pushes, pulls, & PR's.
+
+## Quickstart
+1. Install the plugin:
+```bash
+hermes plugins install Apartment38/hermes_github_bot_commit --enable
+```
+2. [Create a GitHub App](### Create a GitHub App and find its slug)
+3. Configure the plugin to use the App Slug:
+```bash
+hermes github-bot-commit setup
+```
+
 ## Requirements
 
 - Linux or macOS, Hermes's **local** terminal backend, and Git 2.31 or later.
@@ -64,6 +81,7 @@ If you installed without enabling it, enable the plugin afterwards:
 ```bash
 hermes plugins enable hermes-github-bot-commit
 ```
+
 
 ### Create a GitHub App and find its slug
 
