@@ -23,7 +23,7 @@ You will still need to manage pushes, pulls, & PR's.
 ```bash
 hermes plugins install Apartment38/hermes_github_bot_commit --enable
 ```
-2. [Create a GitHub App](###-Create-a-GitHub-App-and-find-its-slug)
+2. [Create a GitHub App](#create-a-github-app-and-find-its-slug)
 3. Configure the plugin to use the App Slug:
 ```bash
 hermes github-bot-commit setup
