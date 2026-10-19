@@ -7,6 +7,8 @@ provides_tools: []
 provides_hooks: []
 provides_middleware:
   - tool_request
-python_dependencies:
-  - "python-dotenv>=1.0,<2"
+config_schema:
+  identity:
+    type: dict
+    description: "Public commit attribution: app_slug and bot_id are required strings; bot_id is a positive decimal ID. Configure with hermes github-bot-commit setup."
 tags: [git, github, identity]

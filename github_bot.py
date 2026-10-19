@@ -10,24 +10,16 @@ import sys
 import uuid
 
 
-def wrapper_directory(home: Path) -> Path:
-    """Publish a profile-specific launcher, without embedding any identity values."""
+def wrapper_directory(home: Path, identity) -> Path:
+    """Atomically publish only public attribution data for this profile."""
     directory = home / "cache" / "hermes-github-bot-commit" / "bin"
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     helper = Path(__file__).with_name("git_wrapper.py").resolve()
-    # Hermes can bootstrap managed dependencies into sys.path without using a
-    # venv executable. Bare sys.executable children do not inherit that path.
-    import dotenv
-    dependency_root = str(Path(dotenv.__file__).resolve().parent.parent)
-    bootstrap = (
-        f"import sys; sys.path.insert(0, {dependency_root!r}); "
-        "import runpy; helper = sys.argv.pop(1); "
-        "runpy.run_path(helper, run_name='__main__')"
-    )
     content = (
         "#!/bin/sh\nexec "
         + " ".join(shlex.quote(x) for x in (
-            sys.executable, "-c", bootstrap, str(helper), "--env-file", str(home / ".env"), "--"
+            sys.executable, "-S", str(helper), "--wrapper-dir", str(directory),
+            "--identity-json", json.dumps(identity, sort_keys=True), "--"
         ))
         + ' "$@"'
         + "\n"
@@ -84,7 +76,7 @@ def python_code(code: str, directory: Path) -> str:
     )
 
 
-def middleware(tool_name=None, args=None, **kwargs):
+def middleware(ctx, tool_name=None, args=None, **kwargs):
     if tool_name not in {"terminal", "execute_code"} or not isinstance(args, dict):
         return None
     from hermes_cli.config import cfg_get, read_raw_config_readonly
@@ -99,7 +91,7 @@ def middleware(tool_name=None, args=None, **kwargs):
     key = "command" if tool_name == "terminal" else "code"
     if not isinstance(args.get(key), str):
         return None
-    directory = wrapper_directory(Path(get_hermes_home()))
+    directory = wrapper_directory(Path(get_hermes_home()), read_identity(ctx))
     transform = shell_command if key == "command" else python_code
     return {
         "args": {**args, key: transform(args[key], directory)},
@@ -110,17 +102,44 @@ def middleware(tool_name=None, args=None, **kwargs):
 
 def setup_parser(parser):
     parser.add_argument("action", choices=["setup", "status"])
+    parser.add_argument("--app-slug", help="GitHub App slug (required for unattended setup)")
 
 
-def cli(args):
-    from hermes_constants import get_env_path
+def read_identity(ctx):
+    """Read one profile-scoped record, copying only public attribution fields.
+
+    Malformed records become an unconfigured record so middleware can publish
+    it and leave validation to the wrapper's qualifying-operation gate.
+    """
+    from .git_wrapper import IdentityError, load_identity
+
+    record = ctx.get_config("identity")
+    if not isinstance(record, dict):
+        return None
+    identity = {key: record.get(key) for key in ("app_slug", "bot_id")}
+    try:
+        load_identity(identity)
+    except IdentityError:
+        return None
+    return identity
+
+
+def cli(ctx, args):
     from .git_wrapper import IdentityError, load_identity, validate_identity
 
     if args.action == "setup":
-        from hermes_cli.config import save_env_value
         import subprocess
 
-        slug = input("GitHub App slug: ").strip()
+        slug = getattr(args, "app_slug", None)
+        if slug is None:
+            if not sys.stdin.isatty():
+                print("github-bot-commit: unattended setup requires --app-slug", file=sys.stderr)
+                return 1
+            try:
+                slug = input("GitHub App slug: ")
+            except (EOFError, KeyboardInterrupt):
+                print("github-bot-commit: setup cancelled", file=sys.stderr)
+                return 1
         try:
             validate_identity(slug, "1")
             response = subprocess.run(
@@ -138,12 +157,29 @@ def cli(args):
         except (IdentityError, OSError, ValueError, subprocess.SubprocessError) as exc:
             print(f"github-bot-commit: setup failed: {exc}", file=sys.stderr)
             return 1
-        save_env_value("GITHUB_APP_SLUG", slug)
-        save_env_value("GITHUB_BOT_ID", bot_id)
+        try:
+            ctx.set_config("identity", {"app_slug": slug, "bot_id": bot_id})
+        except Exception as exc:
+            print(f"github-bot-commit: configuration write failed: {exc}", file=sys.stderr)
+            return 1
     try:
-        name, email = load_identity(get_env_path())
+        identity = read_identity(ctx)
+        name, email = load_identity(identity)
     except IdentityError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(json.dumps({"env_file": str(get_env_path()), "name": name, "email": email}))
+    except Exception as exc:
+        print(f"github-bot-commit: configuration read failed: {exc}", file=sys.stderr)
+        return 1
+    if args.action == "setup":
+        try:
+            from hermes_constants import get_hermes_home
+
+            home = Path(get_hermes_home())
+            if (home / "cache" / "hermes-github-bot-commit" / "bin" / "git").exists():
+                wrapper_directory(home, identity)
+        except Exception as exc:
+            print(f"github-bot-commit: settings saved; launcher refresh failed: {exc}", file=sys.stderr)
+            return 1
+    print(json.dumps({"settings_key": f"plugins.entries.{ctx.plugin_id}.settings.identity", "name": name, "email": email}))
     return 0

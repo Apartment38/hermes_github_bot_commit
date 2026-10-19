@@ -33,11 +33,14 @@ hermes github-bot-commit setup
 
 - Linux or macOS, Hermes's **local** terminal backend, and Git 2.31 or later.
 - `curl` and access to api.github.com during setup (no `jq` required).
-- A current Hermes release supporting native `tool_request` middleware,
-  `register_cli_command`, and profile-aware configuration helpers. The implementation
-  was checked against Hermes checkout `d923a5eb487` (October 17, 2026).
-- Python 3.11 or later and `python-dotenv>=1.0,<2` in Hermes's runtime. The manifest
-  declares this dependency for Hermes's plugin dependency manager.
+- Hermes supporting native `tool_request` middleware, `register_cli_command`,
+  profile-aware `get_hermes_home()`, and public `PluginContext.get_config()` /
+  `set_config()` settings APIs. These APIs are documented in the
+  [plugin guide](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins#store-settings-and-runtime-state).
+  A minimum compatible release has not been established from release evidence;
+  no speculative `requires_hermes` floor is declared.
+- Python 3.11 or later. The plugin and standalone wrapper use only the standard
+  library; no additional Python runtime dependency is required.
 
 ## Install and configure
 
@@ -140,8 +143,17 @@ hermes github-bot-commit status
 When prompted for `GitHub App slug:`, paste the slug from step 4.
 `setup` asks only for the GitHub App slug (without `[bot]`), fetches the bot ID
 from `https://api.github.com/users/${APP_SLUG}%5Bbot%5D` using `curl -fsSL`,
-and parses `.id` in Python. Both values are saved in the active profile's `.env`
-file and read afresh for each qualifying Git invocation.
+and parses `.id` in Python. For unattended use, supply the slug explicitly:
+
+```bash
+hermes github-bot-commit setup --app-slug example-app
+```
+
+Interactive setup requires a TTY and handles cancelled input without saving.
+Both values are validated and saved together through `PluginContext.set_config()`
+as one non-secret identity mapping in the active profile's `config.yaml`.
+`status` is read-only and reports the effective settings key and derived bot
+name/email, not a credential-file path.
 
 ### Install from a source checkout
 
@@ -180,21 +192,31 @@ hermes plugin install Apartment38/hermes_github_bot_commit --ref 0123456789abcde
 `hermes plugin install Apartment38/hermes_github_bot_commit --force --ref <new-sha>`
 to update it deliberately.
 
-`setup` validates the slug and API-returned ID before saving either value using
-Hermes's `.env` writer. Lookup errors leave the saved identity unchanged:
+`setup` validates the slug and the API's positive integer ID before one settings
+write. Lookup errors leave the saved identity unchanged. The resulting settings
+have this shape (the effective plugin ID may differ by installation; `status`
+reports the resolved key):
 
-```dotenv
-GITHUB_APP_SLUG="example-app"
-GITHUB_BOT_ID="123456"
+```yaml
+plugins:
+  entries:
+    hermes-github-bot-commit:
+      settings:
+        identity:
+          app_slug: example-app
+          bot_id: "123456"
 ```
 
-You may also edit these two entries yourself. They are read afresh for each
-qualifying Git invocation; other `.env` values are never forwarded by this
-plugin. Shell substitution and `${VARIABLE}` interpolation are disabled when
-reading identity values. Bot credentials or tokens are unnecessary.
-Existing installations using `GITHUB_AUTHOR_NAME` / `GITHUB_AUTHOR_EMAIL` must
-rerun `hermes github-bot-commit setup`; those legacy entries are no longer used.
-Commits do not make network requests.
+Both members must be strings; `bot_id` must be a positive decimal ID. These are
+public attribution settings, not authentication credentials. Only these two
+members are carried into the generated launcher; no full config or secret store
+is serialized. Commits do not make network requests.
+
+Migration: rerun `hermes github-bot-commit setup` in each profile. Legacy
+`GITHUB_APP_SLUG`, `GITHUB_BOT_ID`, `GITHUB_AUTHOR_NAME`, and
+`GITHUB_AUTHOR_EMAIL` environment entries are ignored. The plugin does not read,
+write, or automatically migrate `.env`; old entries are left untouched and may
+be removed manually.
 
 ## Behavior
 
@@ -225,8 +247,9 @@ For ordinary `git commit`, the wrapper executes the argument/environment
 equivalent of:
 
 ```bash
-APP_SLUG="$GITHUB_APP_SLUG"
-BOT_ID="$GITHUB_BOT_ID"
+# APP_SLUG and BOT_ID below denote the configured settings, not environment inputs.
+APP_SLUG="example-app"
+BOT_ID="123456"
 GIT_COMMITTER_NAME="${APP_SLUG}[bot]" \
 GIT_COMMITTER_EMAIL="${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com" \
 git commit \
@@ -240,16 +263,27 @@ configuration, `HOME`, SSH configuration, credential helpers, and tokens remain
 under the user's control. The plugin writes no repository or global Git config.
 
 The temporary launcher lives in the active profile's
-`cache/hermes-github-bot-commit/bin/`. It contains only interpreter, plugin,
-dependency, and `.env` paths. The launcher carries the host's resolved
-`python-dotenv` location into its child Python process, including when Hermes
-bootstraps a managed environment rather than running a venv executable. No global
-Python installation or `PYTHONPATH` change is needed. Restart Hermes after
-updating plugin code so its in-memory middleware uses the new implementation.
+`cache/hermes-github-bot-commit/bin/`. It contains the interpreter and helper
+paths, wrapper directory, and a serialized non-secret identity record. The child
+uses only Python's standard library and never opens Hermes settings or credential
+files. No global Python installation or `PYTHONPATH` change is needed. Restart
+Hermes after updating plugin code so its in-memory middleware uses the new
+implementation.
+
+Each eligible tool call reads current settings through its bound PluginContext
+and atomically publishes the active profile's launcher, only rewriting changed
+contents. Missing or malformed settings replace any previous valid identity, so
+qualifying writes fail with setup guidance rather than retaining stale settings.
+Direct config/Desktop edits affect newly activated tool calls. An already-running
+background job sees the profile launcher last published by middleware or setup,
+not arbitrary config edits instantly. Successful setup also refreshes an existing
+launcher; if publication fails after settings were saved, it reports that partial
+success separately (the settings save is not rolled back).
 
 Foreground tool execution removes the wrapper path afterward while
 preserving cwd, exported variables, and command exit status. Background children
-retain their launch environment and finish with the policy they started with.
+retain their launch environment, including the profile wrapper path. Later Git
+invocations use that launcher's last published identity as described above.
 Disabling the plugin affects subsequent calls, not existing background jobs.
 
 ## Boundaries
@@ -279,10 +313,11 @@ hermes plugins doctor . --ci
 hermes plugins validate .
 ```
 
-Run the last two commands with an isolated `HERMES_HOME`. For standalone tests,
-install `python-dotenv>=1.0,<2` in your own test environment. CI tests Python 3.11
-and 3.14 on Linux and macOS. `HERMES_SOURCE` enables the optional integration
-checks against an existing Hermes checkout; they otherwise report as skipped.
+Run the last two commands with an isolated `HERMES_HOME`; use an isolated Python
+environment too when adding `validate --install-deps`. Standalone tests require
+no extra Python dependencies. CI tests Python 3.11 and 3.14 on Linux and macOS.
+`HERMES_SOURCE` enables the optional integration checks against an existing
+Hermes checkout; they otherwise report as skipped.
 
 Relevant Hermes contracts: [native plugins](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins),
 [middleware](https://hermes-agent.nousresearch.com/docs/developer-guide/middleware),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
@@ -11,7 +12,7 @@ import subprocess
 import sys
 from urllib.parse import urlsplit
 
-from dotenv import dotenv_values
+from collections.abc import Mapping
 
 COMMIT_VALUE_OPTIONS = {
     "-m", "-F", "-C", "-c", "-t", "--message", "--file", "--reuse-message",
@@ -39,23 +40,20 @@ class IdentityError(ValueError):
 
 def validate_identity(slug: str | None, bot_id: str | None) -> tuple[str, str]:
     for key, value, pattern in (
-        ("GITHUB_APP_SLUG", slug, r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"),
-        ("GITHUB_BOT_ID", bot_id, r"[1-9][0-9]*"),
+        ("app_slug", slug, r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"),
+        ("bot_id", bot_id, r"[1-9][0-9]*"),
     ):
         if not isinstance(value, str) or not re.fullmatch(pattern, value):
-            raise IdentityError(f"github-bot-commit: set a valid {key} in the active Hermes .env; run hermes github-bot-commit setup")
+            raise IdentityError(f"github-bot-commit: set a valid {key} in the active plugin identity settings; run hermes github-bot-commit setup")
     name = f"{slug}[bot]"
     return name, f"{bot_id}+{name}@users.noreply.github.com"
 
 
-def load_identity(path: Path) -> tuple[str, str]:
-    try:
-        # No variable interpolation or shell evaluation. Other .env values stay out
-        # of the Git subprocess, including authentication/provider credentials.
-        values = dotenv_values(path, interpolate=False)
-    except (OSError, UnicodeError) as exc:
-        raise IdentityError("github-bot-commit: cannot read the active Hermes .env") from exc
-    return validate_identity(values.get("GITHUB_APP_SLUG"), values.get("GITHUB_BOT_ID"))
+def load_identity(identity: object) -> tuple[str, str]:
+    """Validate public attribution data, never a configuration-file path."""
+    if not isinstance(identity, Mapping):
+        raise IdentityError("github-bot-commit: configure plugin identity settings; run hermes github-bot-commit setup")
+    return validate_identity(identity.get("app_slug"), identity.get("bot_id"))
 
 
 def github_url(value: str) -> bool:
@@ -159,7 +157,7 @@ def commit_author(args: list[str], name: str, email: str) -> list[str]:
     return [*result, f"--author={name} <{email}>", *args[index:]]
 
 
-def invocation(git: str, argv: list[str], env_file: Path, wrapper_dir: Path) -> tuple[list[str], dict[str, str]]:
+def invocation(git: str, argv: list[str], identity: object, wrapper_dir: Path) -> tuple[list[str], dict[str, str]]:
     if split_command(argv)[1] == "push":
         return argv, os.environ.copy()
     argv = resolve_alias(git, argv, wrapper_dir)
@@ -170,7 +168,14 @@ def invocation(git: str, argv: list[str], env_file: Path, wrapper_dir: Path) -> 
     origin = probe(git, options, "remote", "get-url", "origin")
     if origin.returncode or not github_url(origin.stdout.strip()):
         return argv, env
-    name, email = load_identity(env_file)
+    # CLI keeps JSON opaque until this qualifying-write gate. Direct callers
+    # provide mappings; JSON strings are solely the standalone transport.
+    if isinstance(identity, str):
+        try:
+            identity = json.loads(identity)
+        except ValueError as exc:
+            raise IdentityError("github-bot-commit: invalid identity settings; run hermes github-bot-commit setup") from exc
+    name, email = load_identity(identity)
     env.update(GIT_COMMITTER_NAME=name, GIT_COMMITTER_EMAIL=email)
     replay = command in {"rebase", "cherry-pick", "am"} or (
         command == "commit" and replay_in_progress(git, options)
@@ -183,20 +188,29 @@ def invocation(git: str, argv: list[str], env_file: Path, wrapper_dir: Path) -> 
 
 
 def main():
-    if len(sys.argv) < 4 or sys.argv[1] != "--env-file" or sys.argv[3] != "--":
+    # Deliberately parse only the launcher prefix. Everything after the required
+    # separator belongs to Git, including Git's own options and separators.
+    if (len(sys.argv) < 6 or sys.argv[1] != "--wrapper-dir"
+            or sys.argv[3] != "--identity-json" or sys.argv[5] != "--"
+            or not sys.argv[2]):
         print("github-bot-commit: invalid wrapper invocation", file=sys.stderr)
         return 128
-    env_file = Path(sys.argv[2])
-    wrapper_dir = env_file.parent / "cache" / "hermes-github-bot-commit" / "bin"
+    wrapper_dir = Path(sys.argv[2])
+    identity = sys.argv[4]
+    # Exclude current and legacy launchers from every profile, including
+    # symlinked PATH entries, or a second launcher can re-exec indefinitely.
+    wrapper_names = {"hermes-github-bot", "hermes-github-bot-commit"}
     search_path = os.pathsep.join(
-        p for p in os.get_exec_path() if Path(p or ".").resolve() != wrapper_dir.resolve()
+        p for p in os.get_exec_path()
+        if (resolved := Path(p or ".").resolve()) != wrapper_dir.resolve()
+        and not (resolved.name == "bin" and resolved.parent.name in wrapper_names)
     )
     git = shutil.which("git", path=search_path)
     if not git:
         print("github-bot-commit: cannot find the original git executable", file=sys.stderr)
         return 127
     try:
-        argv, env = invocation(git, sys.argv[4:], env_file, wrapper_dir)
+        argv, env = invocation(git, sys.argv[6:], identity, wrapper_dir)
     except (IdentityError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
         print(str(exc), file=sys.stderr)
         return 128
